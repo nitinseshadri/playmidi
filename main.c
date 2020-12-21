@@ -35,7 +35,7 @@ int main(int argc, const char * argv[]) {
 
   MusicSequence ms;
   NewMusicSequence(&ms);
-  MusicSequenceFileLoad(ms, url, kMusicSequenceFile_MIDIType, 0);
+  MusicSequenceFileLoad(ms, url, kMusicSequenceFile_MIDIType, kMusicSequenceLoadSMF_ChannelsToTracks);
 
   if (argc > 2) {
     int midiDestination = atoi(argv[2]);
@@ -64,6 +64,16 @@ int main(int argc, const char * argv[]) {
   MusicPlayer mp;
   NewMusicPlayer(&mp);
   MusicPlayerSetSequence(mp, ms);
+
+  if (argc > 3) {
+    float speed = atof(argv[3]);
+    MusicPlayerSetPlayRateScalar(mp, speed);
+    printf("Tempo: %lf\n", speed);
+  } else {
+    printf("Tempo: 1.0\n");
+  }
+
+  MusicPlayerPreroll(mp);
   MusicPlayerStart(mp);
   MusicTimeStamp t;
   do {
