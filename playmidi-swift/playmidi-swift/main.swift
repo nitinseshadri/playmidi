@@ -23,18 +23,16 @@ struct PlayMIDI: ParsableCommand {
     @Option(name: [.customShort("d"), .long], help: "The CoreMIDI device number to send MIDI data to. If you do not provide a device number, the built-in software synthesizer will be used.")
     var deviceNumber: Int?
     
-    // To be added in the future.
-    /*
     enum ResetType: String, ExpressibleByArgument {
         case gm
         case gs
+        case mt
         case xg
         case none
     }
     
-    @Option(name: [.customShort("r"), .long], help: "The type of MIDI reset message to send before playback begins. Valid types are gm (General MIDI), gs (Roland GS), xg (Yamaha XG), and none. (default: none)")
+    @Option(name: [.customShort("r"), .long], help: "The type of MIDI reset message to send before playback begins. Valid types are gm (General MIDI), gs (Roland GS), mt (Roland MT-32), xg (Yamaha XG), and none. (default: none)")
     var resetType: ResetType?
-     */
     
     @Option(name: [.customShort("t"), .long], help: "The tempo to play the MIDI file at. (default: 1.0)")
     var tempo: Double?
@@ -60,8 +58,31 @@ struct PlayMIDI: ParsableCommand {
         MusicSequenceFileLoad(ms, url as CFURL, .midiType, .smf_ChannelsToTracks)
         
         if let midiDestination = deviceNumber {
-            print(GetEndpointDisplayName(endpoint: MIDIGetDestination(midiDestination)))
-            MusicSequenceSetMIDIEndpoint(ms, MIDIGetDestination(midiDestination))
+            let endpoint: MIDIEndpointRef = MIDIGetDestination(midiDestination)
+            print(GetEndpointDisplayName(endpoint: endpoint))
+            MusicSequenceSetMIDIEndpoint(ms, endpoint)
+            
+            // Send reset sysex message
+            switch (resetType) {
+            case .gm: // General MIDI
+                sendSysex([0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7], to: endpoint)
+                print("Sent GM reset")
+                break
+            case .gs: // Roland GS
+                sendSysex([0xF0, 0x41, 0x10, 0x42, 0x12, 0x40, 0x00, 0x7F, 0x00, 0x41, 0xF7], to: endpoint)
+                print("Sent GS reset")
+                break
+            case .mt: // Roland MT-32
+                sendSysex([0xF0, 0x41, 0x10, 0x16, 0x12, 0x7F, 0x01, 0xF7], to: endpoint)
+                print("Sent MT-32 reset")
+                break
+            case .xg: // Yamaha XG
+                sendSysex([0xF0, 0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00, 0xF7], to: endpoint)
+                print("Sent XG reset")
+                break
+            default:
+                break
+            }
         } else {
             print("CoreAudio Software Synthesizer")
         }
@@ -118,6 +139,36 @@ func GetEndpointDisplayName(endpoint: MIDIEndpointRef) -> CFString {
     MIDIObjectGetStringProperty(endpoint, kMIDIPropertyDisplayName, &result)
     guard let result = result else { return "(null)" as CFString }
     return result.takeUnretainedValue()
+}
+
+func sendSysex(_ bytes: [UInt8], to endpoint: MIDIEndpointRef) {
+    class SysexCompletion: NSObject {
+        var complete: Bool = false
+    }
+    let completion = SysexCompletion()
+    let completionReference = UnsafeMutablePointer<SysexCompletion>.allocate(capacity: 1)
+    completionReference.initialize(to: completion)
+    
+    var sysexRequest = Data(bytes).withUnsafeBytes { (pointer: UnsafeRawBufferPointer) in
+         return MIDISysexSendRequest(
+            destination: endpoint,
+            data: pointer.baseAddress!.assumingMemoryBound(to: UInt8.self),
+            bytesToSend: UInt32(bytes.count),
+            complete: false,
+            reserved: (0, 0, 0),
+            completionProc: { requestPointer in
+                guard let completion = requestPointer.pointee.completionRefCon?.assumingMemoryBound(to: SysexCompletion.self).pointee else { return }
+                completion.complete = true
+            },
+            completionRefCon: completionReference
+        )
+    }
+    
+    MIDISendSysex(&sysexRequest)
+    
+    while !(completion.complete) {
+        usleep(1000)
+    }
 }
             
 PlayMIDI.main()
