@@ -83,6 +83,9 @@ struct PlayMIDI: ParsableCommand {
             default:
                 break
             }
+            
+            // Wait 100ms after sending a reset per the GM spec
+            usleep(100 * 1000)
         } else {
             print("CoreAudio Software Synthesizer")
         }
@@ -149,8 +152,8 @@ func sendSysex(_ bytes: [UInt8], to endpoint: MIDIEndpointRef) {
     let completionReference = UnsafeMutablePointer<SysexCompletion>.allocate(capacity: 1)
     completionReference.initialize(to: completion)
     
-    var sysexRequest = Data(bytes).withUnsafeBytes { (pointer: UnsafeRawBufferPointer) in
-         return MIDISysexSendRequest(
+    Data(bytes).withUnsafeBytes { (pointer: UnsafeRawBufferPointer) in
+        var sysexRequest = MIDISysexSendRequest(
             destination: endpoint,
             data: pointer.baseAddress!.assumingMemoryBound(to: UInt8.self),
             bytesToSend: UInt32(bytes.count),
@@ -162,12 +165,12 @@ func sendSysex(_ bytes: [UInt8], to endpoint: MIDIEndpointRef) {
             },
             completionRefCon: completionReference
         )
-    }
-    
-    MIDISendSysex(&sysexRequest)
-    
-    while !(completion.complete) {
-        usleep(1000)
+        
+        MIDISendSysex(&sysexRequest)
+        
+        while !(completion.complete) {
+            usleep(1000)
+        }
     }
 }
             
