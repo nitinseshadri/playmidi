@@ -131,6 +131,10 @@ struct PlayMIDI: ParsableCommand {
             print(t, terminator: "\r")
             fflush(stdout)
         }
+        
+        // Make sure all notes have finished sounding before quitting.
+        usleep(1000000)
+        
         MusicPlayerStop(mp)
         puts("")
         return
